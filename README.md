@@ -1,2 +1,1 @@
 # seamcarving-detect
-# seamcarving-detect
