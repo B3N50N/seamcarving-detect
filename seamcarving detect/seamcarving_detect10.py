@@ -31,10 +31,14 @@ min_clip = 1e-4
 max_clip =65500.0
 
 subimage_size =512
-batch_size = 28
-batch_size_old =28
+batch_size = 30
+batch_size_old =batch_size 
 reapeat_time = 1
-label_scale =2
+label_scale =8 # 2
+test_sample = 20
+
+fc_2_node =30000 # 15000
+conv_base =32 #32
 
 restore_step =0
 P0 = 0
@@ -42,9 +46,9 @@ substart = time.time()
 
 # Constants describing the training process.
 MOVING_AVERAGE_DECAY = 0.001     # The decay to use for the moving average.
-NUM_EPOCHS_PER_DECAY = 20.0      # Epochs after which learning rate decays.
+NUM_EPOCHS_PER_DECAY = 600.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.001  # Learning rate decay factor.
-INITIAL_LEARNING_RATE = 0.0001       # Initial learning rate.
+INITIAL_LEARNING_RATE = 0.3     # Initial learning rate.
 lr = INITIAL_LEARNING_RATE
 lr_sum = tf.summary.scalar('learning_rate', lr)
 EPOCHS_PRESET = 500
@@ -59,20 +63,19 @@ STEP_PER_EPOCH_s = (1038*((5*6)+1)*9) #(sample*((src*noise)+normal)*(preqf+posqf
 STEP_PER_EPOCH_t1 = (1038*((5*6)+1)*9)
 STEP_PER_EPOCH_t2 = (300*((5*6)+1)*9)
 
-STEP_PER_EPOCH_s = (100*5*9*7) #(sample*((src*noise)+normal)*(preqf+posqf+pure))*(smooth+sharp)
-STEP_PER_EPOCH_t1 = (100*5*9*7)
-STEP_PER_EPOCH_t2 = (50*5*9*7)
+STEP_PER_EPOCH_s = (test_sample *5*9*7) #(sample*((src*noise)+normal)*(preqf+posqf+pure))*(smooth+sharp)
+STEP_PER_EPOCH_t1 = (test_sample *5*9*7)
+STEP_PER_EPOCH_t2 = ((test_sample//2) *5*9*7)
 
-train_divide = 1038
-validate_divide = 1338-train_divide
+train_divide = test_sample 
+validate_divide = (test_sample//2) -train_divide
 
-train_divide = 100
-validate_divide = 50-train_divide
 
 #sample image variable
 qfm = ["Pre_QF","Pos_QF","pure"]
 qf_percent = [10,20,30,50]
 quality_factor = [25,50,75,100]
+#seam_remove = [20,30]
 seam_remove = [10,20,30,40,50]
 #seam_remove = [11,12,13,14,15,16,17,18,19,21,22,23,24,25,26,27,28,29,31,32,33,34,35,36,37,38,39,41,42,43,44,45,46,47,48,49]
 noise = [5,10,20,30,40,50]
@@ -80,15 +83,14 @@ smooth =[3,5,7]
 sharp_Radius = [1,1.5]
 sharp_Amount = [0.6,1.8]#0.6 1.2 1.8
 sharp_Threshold = [0,0.7]# 0 0.4 0.7
-qfc = 4
-src = 5#36
-noisec = 6
-smoothc = 3
-sharp_Radiusc =  2
-sharp_Amountc =  2
-sharp_Thresholdc = 2
-image_c=100 #1338
-fpc = 0
+qfc = len(quality_factor)
+src = len(seam_remove)
+noisec = len(noise)
+smoothc = len(smooth)
+sharp_Radiusc =  len(sharp_Radius)
+sharp_Amountc =  len(sharp_Amount)
+sharp_Thresholdc = len(sharp_Threshold)
+image_c=test_sample  #1338
 
 #folder_pool (fp)
 folder_pool1 =['_l','_l_noise/seamcarving5_h','_l_noise/seamcarving5_h_sharp_1.5_0.6_0','_l_noise/seamcarving5_h_sharp_1.5_0.6_0.7',
@@ -153,7 +155,7 @@ fpc = len(folder_pool2)
 qfm_t0 = 0
 qfc_t0 = 0
 s_start_t0 =1
-s_end_t0 = 100+1
+s_end_t0 = test_sample +1
 image_t0 =s_start_t0
 src_t0 =0
 fp_t0 =0
@@ -162,7 +164,7 @@ fp_t0 =0
 qfm_t1 = 0
 qfc_t1 = 0
 s_start_t1 =1
-s_end_t1 = 100+1
+s_end_t1 = test_sample +1
 image_t1 =s_start_t1
 src_t1 =0
 fp_t1 =0
@@ -171,15 +173,10 @@ fp_t1 =0
 qfm_t2 = 0
 qfc_t2 = 0
 s_start_t2 =1039
-s_end_t2 = 1088+1
+s_end_t2 = 1038+(test_sample//2) +1
 image_t2 =s_start_t2
 src_t2 =0
 fp_t2 =0
-
-
-STEP_PER_EPOCH_s = ((s_end_t0-s_start_t0)*src*9*fpc) #(sample*((src*noise)+normal)*(preqf+posqf+pure))*(smooth+sharp)
-STEP_PER_EPOCH_t1 = ((s_end_t1-s_start_t1)*src*9*fpc)
-STEP_PER_EPOCH_t2 = ((s_end_t2-s_start_t2)*src*9*fpc)
 
 
 def init_reader():
@@ -310,6 +307,7 @@ def read_y(filename):
 	
 	data_list = []
 	output_list = [[0 for i in range(subimage_size)] for j in range(subimage_size)]
+	output = [[[0 for i in range(subimage_size)] for j in range(subimage_size)] for k in range(2)]
 	fileptr_in = open(filename, 'r')
 	while True:
 		filein_line = fileptr_in.readline()
@@ -329,13 +327,18 @@ def read_y(filename):
 	output_list = np.array(output_list)
 	data_list =np.array(data_list)
 	output_list[0:width, 0:height] = data_list
-	output_list[output_list >1] = 0	
+	output_list[output_list >1] = 0
+	output_list[output_list == 0] = -1 ## use hyper tanh	
 	if label_scale >1 : ## down-sample
 		output_list = downscale_local_mean(output_list, (label_scale,label_scale))
-		output_list[output_list > 0] = 1
-	output_list[output_list == 0] = -1 ## use hyper tanh
+		# output_list[output_list > 0] = 1
+		output_list =((np.sqrt((output_list+1)*50)*10)/50)-1
 	
-	return output_list
+	output[0]= output_list
+	output[1]= output_list*-1
+	
+	# return output_list
+	return output
 	
 def read_x(filename):
 	global subimage_size
@@ -501,7 +504,7 @@ def read_train(return_dict_t0,i):
 						image_t0 = s_start_t0
 						src_t0 =0
 						qfm_t0 =0
-						print("epoch finish")
+						# print("epoch finish")
 		
 	
 	
@@ -921,22 +924,25 @@ def clip_gradients(gradients):
 	return gradients_t
 	
 
+
+
 # define placeholder for inputs to network
 with tf.device('/cpu:0'):
 	xs = tf.placeholder(tf.float16, [batch_size,subimage_size, subimage_size,3])
-	ys = tf.placeholder(tf.float16, [batch_size,subimage_size//label_scale, subimage_size//label_scale])
+	ys = tf.placeholder(tf.float16, [batch_size,2,subimage_size//label_scale, subimage_size//label_scale])
 	 
 
 ## prepare sample ##
 with tf.device('/device:GPU:1'):#'/device:GPU:0'
 	xs_tensor = image_standar(xs)
 	x_image = tf.cast(tf.reshape(xs_tensor, [-1, 512, 512, 3]),tf.float16)
+	## x_image = tf.cast(tf.reshape(xs, [-1, 512, 512, 3]),tf.float16)
 	
 
 ## conv1 layer ##
 with tf.device('/device:GPU:0'):
-	W_conv1 = weight_variable_xavier([5,5, 3,32],"W_conv1") # patch 5x5, in size 1, out size 32
-	b_conv1 = bias_variable([32],"b_conv1")
+	W_conv1 = weight_variable_xavier([10,10, 3,1*conv_base],"W_conv1") # patch 5x5, in size 1, out size 32
+	b_conv1 = bias_variable([1*conv_base],"b_conv1")
 	h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1,"h_conv1") + b_conv1, name="h_conv1") # output size 512x512x32
 	h_pool1 = avg_pool_2x2(h_conv1,"h_pool1") # output size 256x256x32
 	# h_pool1_LRN = tf.nn.lrn(h_pool1,name="h_pool1_LRN")# output size 256x256x32
@@ -945,8 +951,8 @@ with tf.device('/device:GPU:0'):
 	
 ## conv2 layer ##
 with tf.device('/device:GPU:0'):
-	W_conv2 = weight_variable_xavier([5,5, 32, 64],"W_conv2") # patch 5x5, in size 32, out size 64
-	b_conv2 = bias_variable([64],"b_conv2")
+	W_conv2 = weight_variable_xavier([7,7, 1*conv_base, 2*conv_base],"W_conv2") # patch 5x5, in size 32, out size 64
+	b_conv2 = bias_variable([2*conv_base],"b_conv2")
 	h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2,"h_conv2") + b_conv2, name="h_conv2") # output size 256x256x64
 	h_pool2 = avg_pool_2x2(h_conv2,"h_pool2") # output size 128x128x64
 	# h_pool2_LRN = tf.nn.lrn(h_pool2,name="h_pool2_LRN")# output size 128x128x64
@@ -955,8 +961,8 @@ with tf.device('/device:GPU:0'):
 	
 ## conv3 layer ##
 with tf.device('/device:GPU:0'):
-	W_conv3 = weight_variable_xavier([5,5, 64, 128],"W_conv3") # patch 5x5, in size 64, out size 128
-	b_conv3 = bias_variable([128],"b_conv3")
+	W_conv3 = weight_variable_xavier([5,5, 2*conv_base, 4*conv_base],"W_conv3") # patch 5x5, in size 64, out size 128
+	b_conv3 = bias_variable([4*conv_base],"b_conv3")
 	h_conv3 = tf.nn.relu(conv2d(h_pool2, W_conv3,"h_conv3") + b_conv3, name="h_conv3") # output size 128x128x128
 	h_pool3 = avg_pool_2x2(h_conv3,"h_pool3") # output size 64x64x128
 	# h_pool3_LRN = tf.nn.lrn(h_pool3,name="h_pool3_LRN")# output size 64x64x128
@@ -965,8 +971,8 @@ with tf.device('/device:GPU:0'):
 	
 ## conv4 layer ##
 with tf.device('/device:GPU:0'):
-	W_conv4 = weight_variable_xavier([5,5, 128, 256],"W_conv4") # patch 5x5, in size 128, out size 256
-	b_conv4 = bias_variable([256],"b_conv4")
+	W_conv4 = weight_variable_xavier([5,5, 4*conv_base, 8*conv_base],"W_conv4") # patch 5x5, in size 128, out size 256
+	b_conv4 = bias_variable([8*conv_base],"b_conv4")
 	h_conv4 = tf.nn.relu(conv2d(h_pool3, W_conv4,"h_conv4") + b_conv4, name="h_conv4") # output size 64*64*256
 	h_pool4 = avg_pool_2x2(h_conv4,"h_pool4") # output size 32x32x256
 	# h_pool4_LRN = tf.nn.lrn(h_pool4,name="h_pool4_LRN")# output size 32x32x256
@@ -975,8 +981,8 @@ with tf.device('/device:GPU:0'):
 	
 ## conv5 layer ##
 with tf.device('/device:GPU:0'):
-	W_conv5 = weight_variable_xavier([5,5, 256, 512],"W_conv5") # patch 5x5, in size 256, out size 512
-	b_conv5 = bias_variable([512],"b_conv5")
+	W_conv5 = weight_variable_xavier([5,5, 8*conv_base, 16*conv_base],"W_conv5") # patch 5x5, in size 256, out size 512
+	b_conv5 = bias_variable([16*conv_base],"b_conv5")
 	h_conv5 = tf.nn.relu(conv2d(h_pool4, W_conv5,"h_conv5") + b_conv5, name="h_conv5") # output size 32*32*512
 	h_pool5 = avg_pool_2x2(h_conv5,"h_pool5") # output size 16x16x512
 	# h_pool5_LRN = tf.nn.lrn(h_pool5,name="h_pool5_LRN")# output size 16x16x512
@@ -985,8 +991,8 @@ with tf.device('/device:GPU:0'):
 	
 ## conv6 layer ##
 with tf.device('/device:GPU:0'):
-	W_conv6 = weight_variable_xavier([5,5, 512, 1024],"W_conv6") # patch 5x5, in size 256, out size 1024
-	b_conv6 = bias_variable([1024],"b_conv6")
+	W_conv6 = weight_variable_xavier([5,5, 16*conv_base, 32*conv_base],"W_conv6") # patch 5x5, in size 256, out size 1024
+	b_conv6 = bias_variable([32*conv_base],"b_conv6")
 	h_conv6 = tf.nn.relu(conv2d(h_pool5, W_conv6,"h_conv6") + b_conv6, name="h_conv6") # output size 16*16*1024
 	h_pool6 = avg_pool_2x2(h_conv6,"h_pool6") # output size 8x8x1024
 	# h_pool6_LRN = tf.nn.lrn(h_pool6,name="h_pool6_LRN")# output size 8x8x1024
@@ -994,34 +1000,44 @@ with tf.device('/device:GPU:0'):
 	# b_conv6_all = tf.summary.histogram("b_conv6",b_conv6)
 
 	
-# ## conv7 layer ##
+## conv7 layer ##
+with tf.device('/device:GPU:0'):
+	W_conv7 = weight_variable_xavier([5,5, 32*conv_base, 64*conv_base],"W_conv7") # patch 5x5, in size 256, out size 1024
+	b_conv7 = bias_variable([64*conv_base],"b_conv7")
+	h_conv7 = tf.nn.relu(conv2d(h_pool6, W_conv7,"h_conv7") + b_conv7, name="h_conv7") # output size 8*8*2048
+	h_pool7 = avg_pool_2x2(h_conv7,"h_pool7") # output size 4x4x2048
+	# h_pool7_LRN = tf.nn.lrn(h_pool7,name="h_pool7_LRN")# output size 4x4x2048
+	# W_conv7_all = tf.summary.histogram("W_conv7",W_conv7)
+	# b_conv7_all = tf.summary.histogram("b_conv7",b_conv7)
+
+## conv8 layer ##	
+with tf.device('/device:GPU:0'):
+	W_conv8 = weight_variable_xavier([4,4, 64*conv_base, 128*conv_base],"W_conv8") # patch 5x5, in size 256, out size 1024
+	b_conv8 = bias_variable([128*conv_base],"b_conv8")
+	h_conv8 = tf.nn.relu(conv2d(h_pool7, W_conv8,"h_conv8") + b_conv8, name="h_conv8") # output size 4*4*4096
+	h_pool8 = avg_pool_2x2(h_conv8,"h_pool8") # output size 2*2*4096
+	# h_pool8_LRN = tf.nn.lrn(h_pool8,name="h_pool8_LRN")# output size 2*2*4096
+	# W_conv8_all = tf.summary.histogram("W_conv8",W_conv8)
+	# b_conv8_all = tf.summary.histogram("b_conv8",b_conv8)	
+
+## conv9 layer ##	
 # with tf.device('/device:GPU:0'):
-	# W_conv7 = weight_variable_xavier([5,5, 1024, 2048],"W_conv7") # patch 5x5, in size 256, out size 1024
-	# b_conv7 = bias_variable([2048],"b_conv7")
-	# h_conv7 = tf.nn.relu(conv2d(h_pool6, W_conv7,"h_conv7") + b_conv7, name="h_conv7") # output size 8*8*2048
-	# h_pool7 = avg_pool_2x2(h_conv7,"h_pool7") # output size 4x4x2048
-	# # h_pool7_LRN = tf.nn.lrn(h_pool7,name="h_pool7_LRN")# output size 4x4x2048
-	# # W_conv7_all = tf.summary.histogram("W_conv7",W_conv7)
-	# # b_conv7_all = tf.summary.histogram("b_conv7",b_conv7)
-	
-# with tf.device('/device:GPU:0'):
-	# W_conv8 = weight_variable_xavier([4,4, 2048, 4096],"W_conv8") # patch 5x5, in size 256, out size 1024
-	# b_conv8 = bias_variable([4096],"b_conv8")
-	# h_conv8 = tf.nn.relu(conv2d(h_pool7, W_conv8,"h_conv8") + b_conv8, name="h_conv8") # output size 4*4*4096
-	# h_pool8 = avg_pool_2x2(h_conv8,"h_pool8") # output size 2*2*4096
-	# # h_pool8_LRN = tf.nn.lrn(h_pool8,name="h_pool8_LRN")# output size 1*1*4096
-	# # W_conv8_all = tf.summary.histogram("W_conv8",W_conv8)
-	# # b_conv8_all = tf.summary.histogram("b_conv8",b_conv8)	
+	# W_conv9 = weight_variable_xavier([2,2, 128*conv_base, 256*conv_base],"W_conv9") # patch 5x5, in size 256, out size 1024
+	# b_conv9 = bias_variable([256*conv_base],"b_conv8")
+	# h_conv9 = tf.nn.relu(conv2d(h_pool8, W_conv9,"h_conv9") + b_conv9, name="h_conv9") # output size 4*4*4096
+	# h_pool9 = avg_pool_2x2(h_conv9,"h_pool8") # output size 1*1*8192
+	# # h_pool9_LRN = tf.nn.lrn(h_pool9,name="h_pool9_LRN")# output size 1*1*8192
+	# # W_conv9_all = tf.summary.histogram("W_conv9",W_conv9)
+	# # b_conv9_all = tf.summary.histogram("b_conv9",b_conv9)	
 	
 	# t_v = tf.trainable_variables()
 	
 ## fc1 layer ##
 with tf.device('/device:GPU:0'):
-	W_fc1 = weight_variable([8*8*1024, 15000],"W_fc1")#65536,30000
-	b_fc1 = bias_variable([15000],"b_fc1")
-	# [n_samples, 125, 125, 128] ->> [n_samples, 125*125*512]
-	h_pool6_flat = tf.reshape(h_pool6, [-1, 8*8*1024])
-	h_fc1 = tf.nn.tanh(tf.matmul(h_pool6_flat, W_fc1) + b_fc1,name="h_fc1")#tf.nn.relu
+	W_fc1 = weight_variable([2*2*128*conv_base, fc_2_node],"W_fc1")#65536,30000
+	b_fc1 = bias_variable([fc_2_node],"b_fc1")
+	h_pool_flat = tf.reshape(h_pool8, [-1, 2*2*128*conv_base])
+	h_fc1 = tf.nn.tanh(tf.matmul(h_pool_flat, W_fc1) + b_fc1,name="h_fc1")#tf.nn.relu
 	h_fc1_drop = tf.cast(tf.nn.dropout(tf.cast(h_fc1,tf.float32), KEEP_PROB_SET),tf.float16, name="h_fc1_drop")
 	h_fc1_drop_1 = tf.where(tf.is_nan(h_fc1_drop), tf.constant(min_clip,dtype=tf.float16, shape=h_fc1_drop.shape), h_fc1_drop)
 	# W_fc1_all = tf.summary.histogram("W_fc1",W_fc1)
@@ -1029,7 +1045,7 @@ with tf.device('/device:GPU:0'):
 	
 ##down sampleing fc4 layer##
 with tf.device('/device:GPU:0'):
-	W_fc4 = weight_variable([15000,((subimage_size//label_scale)//2)],"W_fc4")
+	W_fc4 = weight_variable([fc_2_node,((subimage_size//label_scale)//2)],"W_fc4")
 	b_fc4 = bias_variable([((subimage_size//label_scale)//2)],"b_fc4")
 	h_fc4 = tf.nn.tanh(tf.matmul(h_fc1_drop_1, W_fc4) + b_fc4, name="h_fc4")#tf.nn.relu h_fc3_1
 	h_fc4_1 = tf.where(tf.is_nan(h_fc4), tf.constant(min_clip,dtype=tf.float16, shape=h_fc4.shape), h_fc4)
@@ -1038,8 +1054,8 @@ with tf.device('/device:GPU:0'):
 	
 ## fc6 layer method 2##
 with tf.device('/device:GPU:0'):
-	W_fc6 = weight_variable([((subimage_size//label_scale)//2), (subimage_size//label_scale)*(subimage_size//label_scale)],"W_fc6")#262,144
-	b_fc6 = bias_variable([(subimage_size//label_scale)*(subimage_size//label_scale)],"b_fc6")
+	W_fc6 = weight_variable([((subimage_size//label_scale)//2), 2*(subimage_size//label_scale)*(subimage_size//label_scale)],"W_fc6")#262,144
+	b_fc6 = bias_variable([2*(subimage_size//label_scale)*(subimage_size//label_scale)],"b_fc6")
 	prediction = tf.nn.tanh(tf.matmul(h_fc4_1, W_fc6) + b_fc6, name="prediction") #tf.nn.sigmoid
 	prediction_1 = tf.where(tf.is_nan(prediction), tf.constant(0.0,dtype=tf.float16, shape=prediction.shape), prediction)
 	# W_fc6_all = tf.summary.histogram("W_fc6",W_fc6)
@@ -1048,13 +1064,15 @@ with tf.device('/device:GPU:0'):
 	#tf.clip_by_value(y_conv,1e-10,1.0)
 	
 with tf.device('/device:GPU:1'):
+	prediction_2 = tf.reshape(prediction_1,[(batch_size),2,(subimage_size//label_scale),(subimage_size//label_scale)])
+
+with tf.device('/device:GPU:1'):
 # pre progress y
-	# ys_down = downsample(ys)
-	# y_reshape = tf.reshape(ys_down, [-1, (subimage_size/2)*(subimage_size/2)])
-	y_reshape = tf.reshape(ys, [-1, (subimage_size//label_scale)*(subimage_size//label_scale)])
+	#　y_reshape = tf.reshape(ys, [-1, (subimage_size//label_scale)*(subimage_size//label_scale)])
+	y_reshape = ys
 
 #the error between prediction and real data
-	loss = tf.losses.mean_squared_error(y_reshape,prediction_1)
+	loss = tf.losses.mean_squared_error(y_reshape,prediction_2)
 	#loss = tf.losses.mean_pairwise_squared_error(y_reshape,prediction_1)
 	loss_sum = tf.summary.scalar("loss", loss)
 
@@ -1105,10 +1123,12 @@ W_conv5_rng = tf.where(tf.is_nan(W_conv5), tf.constant(min_clip,dtype=tf.float16
 b_conv5_rng = tf.where(tf.is_nan(b_conv5), tf.constant(min_clip,dtype=tf.float16, shape=b_conv5.shape), b_conv5)
 W_conv6_rng = tf.where(tf.is_nan(W_conv6), tf.constant(min_clip,dtype=tf.float16, shape=W_conv6.shape), W_conv6)
 b_conv6_rng = tf.where(tf.is_nan(b_conv6), tf.constant(min_clip,dtype=tf.float16, shape=b_conv6.shape), b_conv6)
-# W_conv7_rng = tf.where(tf.is_nan(W_conv7), tf.constant(min_clip,dtype=tf.float16, shape=W_conv7.shape), W_conv7)
-# b_conv7_rng = tf.where(tf.is_nan(b_conv7), tf.constant(min_clip,dtype=tf.float16, shape=b_conv7.shape), b_conv7)
-# W_conv8_rng = tf.where(tf.is_nan(W_conv8), tf.constant(min_clip,dtype=tf.float16, shape=W_conv8.shape), W_conv8)
-# b_conv8_rng = tf.where(tf.is_nan(b_conv8), tf.constant(min_clip,dtype=tf.float16, shape=b_conv8.shape), b_conv8)
+W_conv7_rng = tf.where(tf.is_nan(W_conv7), tf.constant(min_clip,dtype=tf.float16, shape=W_conv7.shape), W_conv7)
+b_conv7_rng = tf.where(tf.is_nan(b_conv7), tf.constant(min_clip,dtype=tf.float16, shape=b_conv7.shape), b_conv7)
+W_conv8_rng = tf.where(tf.is_nan(W_conv8), tf.constant(min_clip,dtype=tf.float16, shape=W_conv8.shape), W_conv8)
+b_conv8_rng = tf.where(tf.is_nan(b_conv8), tf.constant(min_clip,dtype=tf.float16, shape=b_conv8.shape), b_conv8)
+# W_conv9_rng = tf.where(tf.is_nan(W_conv9), tf.constant(min_clip,dtype=tf.float16, shape=W_conv9.shape), W_conv9)
+# b_conv9_rng = tf.where(tf.is_nan(b_conv9), tf.constant(min_clip,dtype=tf.float16, shape=b_conv9.shape), b_conv9)
 W_fc1_rng = tf.where(tf.is_nan(W_fc1), tf.constant(min_clip,dtype=tf.float16, shape=W_fc1.shape), W_fc1)
 b_fc1_rng = tf.where(tf.is_nan(b_fc1), tf.constant(min_clip,dtype=tf.float16, shape=b_fc1.shape), b_fc1)
 W_fc4_rng = tf.where(tf.is_nan(W_fc4), tf.constant(min_clip,dtype=tf.float16, shape=W_fc4.shape), W_fc4)
@@ -1139,28 +1159,30 @@ b_fc6_rng = tf.where(tf.is_nan(b_fc6), tf.constant(min_clip,dtype=tf.float16, sh
 # W_fc6_rng = tf.where(tf.is_inf(W_fc6_rng2), tf.constant(max_clip,dtype=tf.float16, shape=W_fc6_rng2.shape), W_fc6_rng2)
 # b_fc6_rng = tf.where(tf.is_inf(b_fc6_rng2), tf.constant(max_clip,dtype=tf.float16, shape=b_fc6_rng2.shape), b_fc6_rng2)
 
-W_conv1_rns = tf.placeholder(tf.float16, [5,5, 3,32])
-b_conv1_rns = tf.placeholder(tf.float16, [32])
-W_conv2_rns = tf.placeholder(tf.float16, [5,5, 32, 64])
-b_conv2_rns = tf.placeholder(tf.float16, [64])
-W_conv3_rns = tf.placeholder(tf.float16, [5,5, 64, 128])
-b_conv3_rns = tf.placeholder(tf.float16, [128])
-W_conv4_rns = tf.placeholder(tf.float16, [5,5, 128, 256])
-b_conv4_rns = tf.placeholder(tf.float16, [256])
-W_conv5_rns = tf.placeholder(tf.float16, [5,5, 256, 512])
-b_conv5_rns = tf.placeholder(tf.float16, [512])
-W_conv6_rns = tf.placeholder(tf.float16, [5,5, 512, 1024])
-b_conv6_rns = tf.placeholder(tf.float16, [1024])
-# W_conv7_rns = tf.placeholder(tf.float16, [5,5, 1024, 2048])
-# b_conv7_rns = tf.placeholder(tf.float16, [2048])
-# W_conv8_rns = tf.placeholder(tf.float16, [4,4, 2048, 4096])
-# b_conv8_rns = tf.placeholder(tf.float16, [4096])
-W_fc1_rns = tf.placeholder(tf.float16, [8*8*1024, 15000])
-b_fc1_rns = tf.placeholder(tf.float16, [15000])
-W_fc4_rns = tf.placeholder(tf.float16, [15000,((subimage_size//label_scale)//2)])
+W_conv1_rns = tf.placeholder(tf.float16, [10,10, 3,1*conv_base])
+b_conv1_rns = tf.placeholder(tf.float16, [1*conv_base])
+W_conv2_rns = tf.placeholder(tf.float16, [7,7, 1*conv_base, 2*conv_base])
+b_conv2_rns = tf.placeholder(tf.float16, [2*conv_base])
+W_conv3_rns = tf.placeholder(tf.float16, [5,5, 2*conv_base, 4*conv_base])
+b_conv3_rns = tf.placeholder(tf.float16, [4*conv_base])
+W_conv4_rns = tf.placeholder(tf.float16, [5,5, 4*conv_base, 8*conv_base])
+b_conv4_rns = tf.placeholder(tf.float16, [8*conv_base])
+W_conv5_rns = tf.placeholder(tf.float16, [5,5, 8*conv_base, 16*conv_base])
+b_conv5_rns = tf.placeholder(tf.float16, [16*conv_base])
+W_conv6_rns = tf.placeholder(tf.float16, [5,5, 16*conv_base, 32*conv_base])
+b_conv6_rns = tf.placeholder(tf.float16, [32*conv_base])
+W_conv7_rns = tf.placeholder(tf.float16, [5,5, 32*conv_base, 64*conv_base])
+b_conv7_rns = tf.placeholder(tf.float16, [64*conv_base])
+W_conv8_rns = tf.placeholder(tf.float16, [4,4, 64*conv_base, 128*conv_base])
+b_conv8_rns = tf.placeholder(tf.float16, [128*conv_base])
+# W_conv9_rns = tf.placeholder(tf.float16, [2,2, 128*conv_base, 256*conv_base])
+# b_conv9_rns = tf.placeholder(tf.float16, [256*conv_base])
+W_fc1_rns = tf.placeholder(tf.float16, [2*2*128*conv_base, fc_2_node])
+b_fc1_rns = tf.placeholder(tf.float16, [fc_2_node])
+W_fc4_rns = tf.placeholder(tf.float16, [fc_2_node,((subimage_size//label_scale)//2)])
 b_fc4_rns = tf.placeholder(tf.float16, [((subimage_size//label_scale)//2)])
-W_fc6_rns = tf.placeholder(tf.float16, [((subimage_size//label_scale)//2), (subimage_size//label_scale)*(subimage_size//label_scale)])
-b_fc6_rns = tf.placeholder(tf.float16, [(subimage_size//label_scale)*(subimage_size//label_scale)])
+W_fc6_rns = tf.placeholder(tf.float16, [((subimage_size//label_scale)//2), 2*(subimage_size//label_scale)*(subimage_size//label_scale)])
+b_fc6_rns = tf.placeholder(tf.float16, [2*(subimage_size//label_scale)*(subimage_size//label_scale)])
 
 W_conv1_rn = tf.assign(W_conv1,W_conv1_rns)
 b_conv1_rn = tf.assign(b_conv1,b_conv1_rns)
@@ -1174,10 +1196,12 @@ W_conv5_rn = tf.assign(W_conv5,W_conv5_rns)
 b_conv5_rn = tf.assign(b_conv5,b_conv5_rns)
 W_conv6_rn = tf.assign(W_conv6,W_conv6_rns)
 b_conv6_rn = tf.assign(b_conv6,b_conv6_rns)
-# W_conv7_rn = tf.assign(W_conv7,W_conv7_rns)
-# b_conv7_rn = tf.assign(b_conv7,b_conv7_rns)
-# W_conv8_rn = tf.assign(W_conv8,W_conv8_rns)
-# b_conv8_rn = tf.assign(b_conv8,b_conv8_rns)
+W_conv7_rn = tf.assign(W_conv7,W_conv7_rns)
+b_conv7_rn = tf.assign(b_conv7,b_conv7_rns)
+W_conv8_rn = tf.assign(W_conv8,W_conv8_rns)
+b_conv8_rn = tf.assign(b_conv8,b_conv8_rns)
+# W_conv9_rn = tf.assign(W_conv9,W_conv9_rns)
+# b_conv9_rn = tf.assign(b_conv9,b_conv9_rns)
 W_fc1_rn = tf.assign(W_fc1,W_fc1_rns)
 b_fc1_rn = tf.assign(b_fc1,b_fc1_rns)
 W_fc4_rn = tf.assign(W_fc4,W_fc4_rns)
@@ -1199,6 +1223,7 @@ tf.summary.scalar("time per step", save_timeg)
 tf.summary.scalar("loss_t2", save_res2g)
  
 merged_summary = tf.summary.merge_all()
+print("net10_test_3D_label")
 ##setting
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -1351,19 +1376,23 @@ def train_step_epoch(ii):
 # x,y =read_train(1,1)
 # print(np.shape(x))
 # print(np.shape(y))
-	
-	
+
+
 ##validate file name
-# for j in range(STEP_PER_EPOCH_t1):
-	# p1= sess.run(next_element2)
-	# batch_xt,batch_yt  =p1
-	# sess.run(x_image,feed_dict = {xs: batch_xt, ys: batch_yt})
-	# print(filename)
-# for k in range(STEP_PER_EPOCH_t2):
-	# p2= sess.run(next_element3)
-	# batch_xt,batch_yt  =p2
-	# sess.run(x_image,feed_dict = {xs: batch_xt, ys: batch_yt})
-	# print(filename)
+# try:
+	# for j in range(STEP_PER_EPOCH_t1):
+		# p1= sess.run(next_element2)
+		# batch_xt,batch_yt  =p1
+		# sess.run(x_image,feed_dict = {xs: batch_xt, ys: batch_yt})
+		# # print(filename)
+	# for k in range(STEP_PER_EPOCH_t2):
+		# p2= sess.run(next_element3)
+		# batch_xt,batch_yt  =p2
+		# sess.run(x_image,feed_dict = {xs: batch_xt, ys: batch_yt})
+		# # print(filename)
+	# print("fuile reader system test success")
+# except:
+	# print("fuile reader system test fail")
 
 #train control
 set_rs()
@@ -1393,5 +1422,5 @@ save_path = saver.save(sess, "net10/save_net.ckpt")
 
 #mppyplot.imshow(cv2.cvtColor(x, cv2.COLOR_BGR2RGB))
 #mppyplot.show()
-# nohup python3 -u seamcarving_detect8.py > nohup.log 2>&1 &
+# nohup python3 -u seamcarving_detect10.py > nohup.log 2>&1 &
 # nohup tensorboard --logdir=:/media/benson/SSD/workspace/logs/ > tesorboard.log 2>&1 &
